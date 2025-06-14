@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像挿入可能 円グラフジェネレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .draggable { cursor: grab; }
+        .dragging { cursor: grabbing; }
+        #data-table input[type="text"], #data-table input[type="number"] {
+            min-width: 100px;
+        }
+        .leader-line-label {
+            user-select: none; 
+        }
+        .draggable img { pointer-events: none; }
+
+        .custom-message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1000;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .custom-message-box.show {
+            display: block;
+            opacity: 1;
+        }
+        .aspect-square-container {
+            width: 100%;
+            padding-bottom: 100%; 
+            position: relative;
+        }
+        .aspect-square-container > svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 sm:p-8">
+    <div class="container mx-auto max-w-6xl bg-white p-6 sm:p-8 rounded-lg shadow-xl">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-800">画像挿入可能 円グラフジェネレーター</h1>
+            <p class="text-gray-600 mt-2">データを入力し、各項目に画像を挿入して円グラフを作成します。</p>
+        </header>
+
+        <div id="custom-message" class="custom-message-box"></div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <section id="controls-section">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4">データ入力</h2>
+                <div class="mb-4 space-y-2 sm:space-y-0 sm:space-x-2 flex flex-col sm:flex-row">
+                    <button id="add-row-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out w-full sm:w-auto">
+                        行を追加
+                    </button>
+                    <button id="paste-data-btn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out mt-2 sm:mt-0 w-full sm:w-auto">
+                        クリップボードから貼り付け
+                    </button>
+                </div>
+                <div id="paste-area" class="hidden mb-4">
+                    <textarea id="paste-textarea" rows="5" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-400" placeholder="項目名1\t値1\n項目名2\t値2... (タブ区切り)"></textarea>
+                    <button id="submit-paste-btn" class="mt-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out">
+                        貼り付け実行
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table id="data-table" class="w-full min-w-max text-sm text-left text-gray-500">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3">項目名</th>
+                                <th scope="col" class="px-4 py-3">値</th>
+                                <th scope="col" class="px-4 py-3">画像</th>
+                                <th scope="col" class="px-4 py-3">アクション</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table-body"></tbody>
+                    </table>
+                </div>
+                <p id="no-data-message" class="text-gray-500 mt-4 text-center">データがありません。「行を追加」または「クリップボードから貼り付け」でデータを入力してください。</p>
+            </section>
+
+            <section id="preview-and-adjust-section">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4">プレビューと調整</h2>
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-3">円グラフ</h3>
+                    <div id="chart-container" class="aspect-square-container bg-white rounded-lg shadow-md flex items-center justify-center border border-gray-200">
+                         <p id="chart-placeholder" class="text-gray-400 p-4 text-center">データ入力後にグラフが表示されます</p>
+                    </div>
+                    <button id="download-png-btn" class="mt-6 bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out w-full disabled:opacity-50" disabled>
+                        PNGとしてダウンロード
+                    </button>
+                </div>
+                
+                <div id="image-controls-container" class="mt-8 hidden">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-3">選択中のパイの画像調整 (<span id="selected-item-name"></span>)</h3>
+                    <div class="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
+                        <div>
+                            <label for="image-scale" class="block text-sm font-medium text-gray-700">スケール: <span id="scale-value">1</span></label>
+                            <input type="range" id="image-scale" min="0.1" max="3" step="0.05" value="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        </div>
+                        <div>
+                            <label for="image-offset-x" class="block text-sm font-medium text-gray-700">Xオフセット: <span id="offset-x-value">0</span></label>
+                            <input type="range" id="image-offset-x" min="-100" max="100" step="1" value="0" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        </div>
+                        <div>
+                            <label for="image-offset-y" class="block text-sm font-medium text-gray-700">Yオフセット: <span id="offset-y-value">0</span></label>
+                            <input type="range" id="image-offset-y" min="-100" max="100" step="1" value="0" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        let dataEntries = []; 
+        let nextEntryId = 0;
+        let selectedEntryId = null; 
+        let draggingElement = null; 
+        let dragOffsetX, dragOffsetY; 
+        let svgElement; 
+
+        const chartContainer = document.getElementById('chart-container');
+        const dataTableBody = document.getElementById('data-table-body');
+        const addRowBtn = document.getElementById('add-row-btn');
+        const pasteDataBtn = document.getElementById('paste-data-btn');
+        const pasteArea = document.getElementById('paste-area');
+        const pasteTextarea = document.getElementById('paste-textarea');
+        const submitPasteBtn = document.getElementById('submit-paste-btn');
+        const downloadPngBtn = document.getElementById('download-png-btn');
+        const imageControlsContainer = document.getElementById('image-controls-container');
+        const selectedItemNameSpan = document.getElementById('selected-item-name');
+        const imageScaleInput = document.getElementById('image-scale');
+        const scaleValueSpan = document.getElementById('scale-value');
+        const imageOffsetXInput = document.getElementById('image-offset-x');
+        const offsetXValueSpan = document.getElementById('offset-x-value');
+        const imageOffsetYInput = document.getElementById('image-offset-y');
+        const offsetYValueSpan = document.getElementById('offset-y-value');
+        const noDataMessage = document.getElementById('no-data-message');
+        let chartPlaceholder = document.getElementById('chart-placeholder');
+        const customMessageDiv = document.getElementById('custom-message');
+
+        function showMessage(message, type = "info", duration = 3000) {
+            customMessageDiv.textContent = message;
+            customMessageDiv.classList.remove('bg-red-500', 'bg-green-500', 'bg-blue-500', 'bg-gray-700');
+            if (type === "error") customMessageDiv.classList.add('bg-red-500');
+            else if (type === "success") customMessageDiv.classList.add('bg-green-500');
+            else customMessageDiv.classList.add('bg-gray-700');
+            customMessageDiv.classList.add('show');
+            setTimeout(() => { customMessageDiv.classList.remove('show'); }, duration);
+        }
+        
+        function getArcPath(centerX, centerY, radius, startAngle, endAngle) {
+            const startX = centerX + radius * Math.cos(startAngle);
+            const startY = centerY + radius * Math.sin(startAngle);
+            const endX = centerX + radius * Math.cos(endAngle);
+            const endY = centerY + radius * Math.sin(endAngle);
+            const largeArcFlag = (endAngle - startAngle) <= Math.PI ? "0" : "1";
+            if (Math.abs(startX - endX) < 0.01 && Math.abs(startY - endY) < 0.01 && (endAngle - startAngle) > 0) {
+                 if ((endAngle - startAngle) > Math.PI * 1.99) { 
+                     return `M ${centerX},${centerY} L ${startX},${startY} A ${radius},${radius} 0 ${largeArcFlag} 1 ${endX - 0.01},${endY} Z`;
+                 }
+            }
+            return `M ${centerX},${centerY} L ${startX},${startY} A ${radius},${radius} 0 ${largeArcFlag} 1 ${endX},${endY} Z`;
+        }
+
+        function addDataEntry(name = "", value = 0, imageSrc = null, imageSettings = null, leaderLine = null) {
+            const id = nextEntryId++;
+            const entry = {
+                id,
+                name: name || `項目 ${id + 1}`,
+                value: Number(value) || 0,
+                imageSrc: imageSrc,
+                imageSettings: imageSettings || { scale: 1, offsetX: 0, offsetY: 0 },
+                leaderLine: leaderLine || { x1: 0, y1: 0, x2: 0, y2: 0, labelX: 0, labelY: 0, active: true }
+            };
+            dataEntries.push(entry);
+            renderTable();
+            drawPieChart(); 
+            return entry;
+        }
+
+        function renderTable() {
+            dataTableBody.innerHTML = '';
+            if (dataEntries.length === 0) {
+                noDataMessage.classList.remove('hidden');
+                downloadPngBtn.disabled = true;
+                if (chartPlaceholder) chartPlaceholder.classList.remove('hidden');
+                if (svgElement) svgElement.remove(); 
+                svgElement = null;
+            } else {
+                noDataMessage.classList.add('hidden');
+                if (chartPlaceholder) chartPlaceholder.classList.add('hidden');
+            }
+
+            dataEntries.forEach(entry => {
+                const row = dataTableBody.insertRow();
+                row.className = 'bg-white border-b hover:bg-gray-50';
+                row.dataset.id = entry.id;
+
+                const nameCell = row.insertCell(); nameCell.className = 'px-4 py-2';
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text'; nameInput.value = entry.name;
+                nameInput.className = 'w-full p-1 border border-gray-300 rounded focus:ring-1 focus:ring-indigo-400';
+                nameInput.onchange = (e) => {
+                    entry.name = e.target.value; drawPieChart();
+                    if (selectedEntryId === entry.id) selectedItemNameSpan.textContent = entry.name;
+                };
+                nameCell.appendChild(nameInput);
+
+                const valueCell = row.insertCell(); valueCell.className = 'px-4 py-2';
+                const valueInput = document.createElement('input');
+                valueInput.type = 'number'; valueInput.value = entry.value; valueInput.min = "0";
+                valueInput.className = 'w-full p-1 border border-gray-300 rounded focus:ring-1 focus:ring-indigo-400';
+                valueInput.onchange = (e) => {
+                    entry.value = Math.max(0, parseFloat(e.target.value) || 0); drawPieChart();
+                };
+                valueCell.appendChild(valueInput);
+
+                const imageCell = row.insertCell(); imageCell.className = 'px-4 py-2';
+                const imageInput = document.createElement('input');
+                imageInput.type = 'file'; imageInput.accept = 'image/*';
+                imageInput.className = 'text-sm w-full max-w-[150px] sm:max-w-full';
+                imageInput.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            entry.imageSrc = event.target.result;
+                            entry.imageSettings = { scale: 1, offsetX: 0, offsetY: 0 };
+                            if (selectedEntryId === entry.id) updateImageControlsUI(entry);
+                            renderTable(); drawPieChart();
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                };
+                imageCell.appendChild(imageInput);
+                if (entry.imageSrc) {
+                    const imgPreview = document.createElement('img');
+                    imgPreview.src = entry.imageSrc;
+                    imgPreview.className = 'h-10 w-auto mt-1 rounded object-contain';
+                    imageCell.appendChild(imgPreview);
+                }
+
+                const actionCell = row.insertCell(); actionCell.className = 'px-4 py-2 text-center';
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500 hover:text-red-700" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>';
+                deleteBtn.title = "この行を削除";
+                deleteBtn.onclick = () => {
+                    dataEntries = dataEntries.filter(item => item.id !== entry.id);
+                    if (selectedEntryId === entry.id) {
+                        selectedEntryId = null; imageControlsContainer.classList.add('hidden');
+                    }
+                    renderTable(); drawPieChart();
+                };
+                actionCell.appendChild(deleteBtn);
+            });
+        }
+
+        addRowBtn.onclick = () => addDataEntry();
+        pasteDataBtn.onclick = () => {
+            pasteArea.classList.toggle('hidden');
+            if (!pasteArea.classList.contains('hidden')) pasteTextarea.focus();
+        };
+        submitPasteBtn.onclick = () => {
+            const text = pasteTextarea.value.trim();
+            if (!text) { showMessage("貼り付けるデータがありません。", "error"); return; }
+            const lines = text.split('\n'); let addedCount = 0;
+            lines.forEach(line => {
+                const parts = line.split('\t');
+                if (parts.length >= 2) {
+                    const name = parts[0].trim(); const value = parseFloat(parts[1].trim());
+                    if (name && !isNaN(value) && value >= 0) { addDataEntry(name, value); addedCount++; }
+                }
+            });
+            if (addedCount > 0) showMessage(`${addedCount}件のデータを貼り付けました。`, "success");
+            else showMessage("有効なデータ形式が見つかりませんでした。\n各行は「項目名 (タブ) 値」の形式で入力してください。", "error", 5000);
+            pasteTextarea.value = ''; pasteArea.classList.add('hidden');
+        };
+
+        function updateImageControlsUI(entry) {
+            selectedItemNameSpan.textContent = entry.name;
+            imageScaleInput.value = entry.imageSettings.scale; scaleValueSpan.textContent = entry.imageSettings.scale;
+            imageOffsetXInput.value = entry.imageSettings.offsetX; offsetXValueSpan.textContent = entry.imageSettings.offsetX;
+            imageOffsetYInput.value = entry.imageSettings.offsetY; offsetYValueSpan.textContent = entry.imageSettings.offsetY;
+            imageControlsContainer.classList.remove('hidden');
+        }
+
+        imageScaleInput.oninput = (e) => {
+            if (selectedEntryId !== null) { const entry = dataEntries.find(item => item.id === selectedEntryId);
+                if (entry) { entry.imageSettings.scale = parseFloat(e.target.value); scaleValueSpan.textContent = e.target.value; drawPieChart(); }}
+        };
+        imageOffsetXInput.oninput = (e) => {
+            if (selectedEntryId !== null) { const entry = dataEntries.find(item => item.id === selectedEntryId);
+                if (entry) { entry.imageSettings.offsetX = parseInt(e.target.value); offsetXValueSpan.textContent = e.target.value; drawPieChart(); }}
+        };
+        imageOffsetYInput.oninput = (e) => {
+            if (selectedEntryId !== null) { const entry = dataEntries.find(item => item.id === selectedEntryId);
+                if (entry) { entry.imageSettings.offsetY = parseInt(e.target.value); offsetYValueSpan.textContent = e.target.value; drawPieChart(); }}
+        };
+
+        // SVGのViewBoxを動的に更新する関数
+        function updateViewBox(padding = 20) {
+            if (!svgElement) return;
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            const elements = svgElement.querySelectorAll('path, text, polyline');
+            if (elements.length === 0) return;
+
+            elements.forEach(el => {
+                const bbox = el.getBBox();
+                if (bbox.width === 0 && bbox.height === 0) return; 
+
+                minX = Math.min(minX, bbox.x);
+                minY = Math.min(minY, bbox.y);
+                maxX = Math.max(maxX, bbox.x + bbox.width);
+                maxY = Math.max(maxY, bbox.y + bbox.height);
+            });
+
+            if (minX === Infinity) return;
+
+            const boxWidth = maxX - minX;
+            const boxHeight = maxY - minY;
+
+            const newViewBox = [
+                minX - padding,
+                minY - padding,
+                boxWidth + padding * 2,
+                boxHeight + padding * 2
+            ].join(' ');
+
+            svgElement.setAttribute('viewBox', newViewBox);
+        }
+
+
+        function drawPieChart() {
+            if (chartPlaceholder) chartPlaceholder.classList.add('hidden');
+            if (svgElement) { svgElement.remove(); svgElement = null; }
+
+            if (dataEntries.length === 0) {
+                chartContainer.innerHTML = `<p id="chart-placeholder" class="text-gray-400 p-4 text-center">データ入力後にグラフが表示されます</p>`;
+                chartPlaceholder = document.getElementById('chart-placeholder');
+                downloadPngBtn.disabled = true; imageControlsContainer.classList.add('hidden'); selectedEntryId = null; return;
+            }
+            
+            const validEntries = dataEntries.filter(entry => entry.value > 0);
+            if (validEntries.length === 0) {
+                chartContainer.innerHTML = `<p id="chart-placeholder" class="text-gray-400 p-4 text-center">有効なデータ（値が0より大きい）がありません</p>`;
+                chartPlaceholder = document.getElementById('chart-placeholder');
+                downloadPngBtn.disabled = true; imageControlsContainer.classList.add('hidden'); selectedEntryId = null; return;
+            }
+            downloadPngBtn.disabled = false;
+
+            const totalValue = validEntries.reduce((sum, entry) => sum + entry.value, 0);
+            if (totalValue <= 0) { 
+                 chartContainer.innerHTML = `<p id="chart-placeholder" class="text-gray-400 p-4 text-center">合計値が0以下のためグラフを描画できません</p>`;
+                 chartPlaceholder = document.getElementById('chart-placeholder');
+                 downloadPngBtn.disabled = true; return;
+            }
+
+            const containerWidth = chartContainer.clientWidth; 
+            const svgWidth = containerWidth; const svgHeight = containerWidth; 
+            const radius = Math.min(svgWidth, svgHeight) * 0.35; 
+            const labelRadius = radius * 1.45; 
+            const leaderLineLabelOffset = 20; 
+            const fontSize = 12; 
+
+            const centerX = svgWidth / 2; const centerY = svgHeight / 2;
+
+            svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svgElement.setAttribute("width", "100%"); 
+            svgElement.setAttribute("height", "100%");
+            // 初期ViewBoxは固定。後でupdateViewBoxで更新
+            svgElement.setAttribute("viewBox", `0 0 ${svgWidth} ${svgHeight}`); 
+            chartContainer.appendChild(svgElement); 
+
+            const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+            svgElement.appendChild(defs);
+
+            let currentAngle = -Math.PI / 2; 
+            const colors = ['#4CAF50', '#2196F3', '#FFC107', '#E91E63', '#9C27B0', '#00BCD4', '#FF9800', '#795548', '#607D8B', '#FF5722'];
+            
+            const pieSlices = [];
+            const labelsAndLines = [];
+
+            validEntries.forEach((entry, index) => {
+                const sliceAngle = (entry.value / totalValue) * 2 * Math.PI;
+                const endAngle = currentAngle + sliceAngle;
+                const midAngle = currentAngle + sliceAngle / 2;
+
+                const clipPathId = `clip-path-${entry.id}`;
+                const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+                clipPath.setAttribute("id", clipPathId);
+                const clipPathShape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                clipPathShape.setAttribute("d", getArcPath(centerX, centerY, radius, currentAngle, endAngle));
+                clipPath.appendChild(clipPathShape);
+                defs.appendChild(clipPath);
+
+                let fillStyle = colors[index % colors.length];
+                if (entry.imageSrc) {
+                    const patternId = `pattern-${entry.id}`;
+                    fillStyle = `url(#${patternId})`; 
+                    const pattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
+                    pattern.setAttribute("id", patternId); pattern.setAttribute("patternUnits", "userSpaceOnUse"); 
+                    pattern.setAttribute("width", svgWidth); pattern.setAttribute("height", svgHeight);
+                    const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+                    image.setAttributeNS("http://www.w3.org/1999/xlink", "href", entry.imageSrc);
+                    
+                    // 画像の中心をパイの重心に合わせる
+                    const centroidRadius = (2 / 3) * radius;
+                    const imageCenterX = centerX + centroidRadius * Math.cos(midAngle);
+                    const imageCenterY = centerY + centroidRadius * Math.sin(midAngle);
+                    const scaledImgSize = radius * 2 * entry.imageSettings.scale;
+
+                    image.setAttribute("x", imageCenterX - scaledImgSize / 2 + entry.imageSettings.offsetX);
+                    image.setAttribute("y", imageCenterY - scaledImgSize / 2 + entry.imageSettings.offsetY);
+                    image.setAttribute("width", scaledImgSize); image.setAttribute("height", scaledImgSize);
+                    image.setAttribute("preserveAspectRatio", "xMidYMid slice"); 
+                    pattern.appendChild(image); defs.appendChild(pattern);
+                }
+
+                const pieSlice = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                pieSlice.setAttribute("d", getArcPath(centerX, centerY, radius, currentAngle, endAngle));
+                pieSlice.setAttribute("fill", fillStyle);
+                if (entry.imageSrc) pieSlice.setAttribute("clip-path", `url(#${clipPathId})`);
+                pieSlice.setAttribute("stroke", "#fff"); pieSlice.setAttribute("stroke-width", "2");
+                pieSlice.dataset.id = entry.id; 
+                pieSlice.classList.add("cursor-pointer", "hover:opacity-80", "transition-opacity");
+                pieSlice.onclick = () => { selectedEntryId = entry.id; updateImageControlsUI(entry); };
+                pieSlices.push(pieSlice);
+
+                if (entry.leaderLine.active) {
+                    entry.leaderLine.labelX = centerX + labelRadius * Math.cos(midAngle);
+                    entry.leaderLine.labelY = centerY + labelRadius * Math.sin(midAngle);
+                    entry.leaderLine.x2 = centerX + radius * Math.cos(midAngle);
+                    entry.leaderLine.y2 = centerY + radius * Math.sin(midAngle);
+                    
+                    const vecLabelToAnchorX = entry.leaderLine.x2 - entry.leaderLine.labelX;
+                    const vecLabelToAnchorY = entry.leaderLine.y2 - entry.leaderLine.labelY;
+                    const distLabelToAnchor = Math.sqrt(vecLabelToAnchorX * vecLabelToAnchorX + vecLabelToAnchorY * vecLabelToAnchorY);
+                    
+                    if (distLabelToAnchor > leaderLineLabelOffset) {
+                        entry.leaderLine.x1 = entry.leaderLine.labelX + vecLabelToAnchorX * (leaderLineLabelOffset / distLabelToAnchor);
+                        entry.leaderLine.y1 = entry.leaderLine.labelY + vecLabelToAnchorY * (leaderLineLabelOffset / distLabelToAnchor);
+                    } else {
+                        entry.leaderLine.x1 = entry.leaderLine.x2;
+                        entry.leaderLine.y1 = entry.leaderLine.y2;
+                    }
+
+                    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    label.setAttribute("x", entry.leaderLine.labelX);
+                    label.setAttribute("y", entry.leaderLine.labelY);
+                    label.setAttribute("text-anchor", "middle"); 
+                    label.setAttribute("font-size", `${fontSize}px`);
+                    label.setAttribute("fill", "#333");
+                    label.classList.add("draggable", "leader-line-label");
+                    label.dataset.id = entry.id; label.dataset.type = "label"; 
+                    
+                    const tspan1 = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                    tspan1.textContent = `${entry.name} (${entry.value.toLocaleString()})`;
+                    tspan1.setAttribute("x", entry.leaderLine.labelX);
+                    tspan1.setAttribute("dy", `-${fontSize * 0.2}px`); 
+                    
+                    const tspan2 = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                    const percentage = (entry.value / totalValue * 100).toFixed(1);
+                    tspan2.textContent = `${percentage}%`;
+                    tspan2.setAttribute("x", entry.leaderLine.labelX);
+                    tspan2.setAttribute("dy", `${fontSize * 1.2}px`); 
+
+                    label.appendChild(tspan1); label.appendChild(tspan2);
+                    
+                    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+                    line.setAttribute("points", `${entry.leaderLine.x1},${entry.leaderLine.y1} ${entry.leaderLine.x2},${entry.leaderLine.y2}`);
+                    line.setAttribute("stroke", "#333"); line.setAttribute("stroke-width", "1.5");
+                    line.setAttribute("fill", "none"); line.dataset.lineFor = entry.id; 
+
+                    labelsAndLines.push({label, line});
+                }
+                currentAngle = endAngle; 
+            });
+
+            pieSlices.forEach(el => svgElement.appendChild(el));
+            labelsAndLines.forEach(group => {
+                svgElement.appendChild(group.label);
+                svgElement.appendChild(group.line);
+            });
+
+            // 全要素追加後にViewBoxを更新
+            updateViewBox();
+        }
+
+        function startDrag(evt) {
+            if (evt.target.closest('.leader-line-label') && svgElement) {
+                draggingElement = evt.target.closest('.leader-line-label'); 
+                draggingElement.classList.add('dragging');
+                const CTM = svgElement.getScreenCTM(); if (!CTM) return; 
+                const inverseCTM = CTM.inverse();
+                const pt = svgElement.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+                const svgP = pt.matrixTransform(inverseCTM);
+
+                dragOffsetX = svgP.x - parseFloat(draggingElement.getAttribute("x"));
+                dragOffsetY = svgP.y - parseFloat(draggingElement.getAttribute("y"));
+                
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', endDrag);
+                evt.preventDefault(); 
+            }
+        }
+
+        function drag(evt) {
+            if (draggingElement && svgElement) {
+                const CTM = svgElement.getScreenCTM(); if (!CTM) return;
+                const inverseCTM = CTM.inverse();
+                const pt = svgElement.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+                const svgP = pt.matrixTransform(inverseCTM);
+
+                const entryId = parseInt(draggingElement.dataset.id);
+                const entry = dataEntries.find(e => e.id === entryId);
+                if (!entry || !entry.leaderLine) return;
+
+                let newX = svgP.x - dragOffsetX;
+                let newY = svgP.y - dragOffsetY;
+
+                draggingElement.setAttribute("x", newX);
+                draggingElement.setAttribute("y", newY);
+                draggingElement.querySelectorAll('tspan').forEach(tspan => tspan.setAttribute("x", newX));
+
+                entry.leaderLine.labelX = newX;
+                entry.leaderLine.labelY = newY;
+                
+                updateLeaderLineOnLabelDrag(entry);
+                updateViewBox(); // ドラッグ中もViewBoxを更新
+            }
+        }
+        
+        function updateLeaderLineOnLabelDrag(entry) {
+            const leaderLineLabelOffset = 20; 
+            
+            const vecLabelToAnchorX = entry.leaderLine.x2 - entry.leaderLine.labelX;
+            const vecLabelToAnchorY = entry.leaderLine.y2 - entry.leaderLine.labelY;
+            const distLabelToAnchor = Math.sqrt(vecLabelToAnchorX * vecLabelToAnchorX + vecLabelToAnchorY * vecLabelToAnchorY);
+
+            if (distLabelToAnchor > leaderLineLabelOffset) {
+                entry.leaderLine.x1 = entry.leaderLine.labelX + vecLabelToAnchorX * (leaderLineLabelOffset / distLabelToAnchor);
+                entry.leaderLine.y1 = entry.leaderLine.labelY + vecLabelToAnchorY * (leaderLineLabelOffset / distLabelToAnchor);
+            } else { 
+                entry.leaderLine.x1 = entry.leaderLine.x2; 
+                entry.leaderLine.y1 = entry.leaderLine.y2;
+            }
+            
+            const lineElement = svgElement.querySelector(`polyline[data-line-for='${entry.id}']`);
+            if (lineElement) {
+                 lineElement.setAttribute("points", `${entry.leaderLine.x1},${entry.leaderLine.y1} ${entry.leaderLine.x2},${entry.leaderLine.y2}`);
+            }
+        }
+
+        function endDrag() {
+            if (draggingElement) {
+                draggingElement.classList.remove('dragging');
+                draggingElement = null;
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', endDrag);
+            }
+        }
+        chartContainer.addEventListener('mousedown', startDrag);
+
+        downloadPngBtn.onclick = () => {
+            if (!svgElement) { showMessage("グラフが描画されていません。", "error"); return; }
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const canvas = document.createElement("canvas");
+            
+            // viewBoxからサイズを取得して高解像度化
+            const viewBox = svgElement.getAttribute('viewBox').split(' ').map(parseFloat);
+            const svgWidthInViewBox = viewBox[2];
+            const svgHeightInViewBox = viewBox[3];
+
+            const scaleFactor = 2;
+            canvas.width = svgWidthInViewBox * scaleFactor;
+            canvas.height = svgHeightInViewBox * scaleFactor;
+            
+            const ctx = canvas.getContext("2d");
+            
+            const img = new Image();
+            img.onload = () => {
+                ctx.fillStyle = 'white'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height); 
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
+                
+                const pngUrl = canvas.toDataURL("image/png");
+                const link = document.createElement("a");
+                link.download = "interactive-pie-chart.png"; link.href = pngUrl;
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                showMessage("PNG画像をダウンロードしました。", "success");
+            };
+            img.onerror = (e) => { console.error("SVGから画像への変換エラー:", e); showMessage("PNG画像の生成に失敗しました。", "error"); };
+            img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderTable(); 
+            chartPlaceholder = document.getElementById('chart-placeholder'); 
+        });
+
+        let resizeTimer;
+        window.onresize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (svgElement && dataEntries.filter(e => e.value > 0).length > 0) { drawPieChart(); }
+            }, 250); 
+        };
+    </script>
+</body>
+</html>
