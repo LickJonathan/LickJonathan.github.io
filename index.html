@@ -95,13 +95,15 @@
             <section id="preview-and-adjust-section">
                 <h2 class="text-2xl font-semibold text-gray-700 mb-4">プレビューと調整</h2>
                 <div>
-                    <h3 class="text-xl font-semibold text-gray-700 mb-3">円グラフ</h3>
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xl font-semibold text-gray-700">円グラフ</h3>
+                        <button id="download-png-btn" class="bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out disabled:opacity-50 text-sm" disabled>
+                            透過PNGダウンロード
+                        </button>
+                    </div>
                     <div id="chart-container" class="aspect-square-container bg-white rounded-lg shadow-md flex items-center justify-center border border-gray-200">
                          <p id="chart-placeholder" class="text-gray-400 p-4 text-center">データ入力後にグラフが表示されます</p>
                     </div>
-                    <button id="download-png-btn" class="mt-6 bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out w-full disabled:opacity-50" disabled>
-                        PNGとしてダウンロード
-                    </button>
                 </div>
                 
                 <div id="image-controls-container" class="mt-8 hidden">
@@ -312,40 +314,25 @@
                 if (entry) { entry.imageSettings.offsetY = parseInt(e.target.value); offsetYValueSpan.textContent = e.target.value; drawPieChart(); }}
         };
 
-        // SVGのViewBoxを動的に更新する関数
         function updateViewBox(padding = 20) {
             if (!svgElement) return;
-
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            
             const elements = svgElement.querySelectorAll('path, text, polyline');
             if (elements.length === 0) return;
-
             elements.forEach(el => {
                 const bbox = el.getBBox();
                 if (bbox.width === 0 && bbox.height === 0) return; 
-
                 minX = Math.min(minX, bbox.x);
                 minY = Math.min(minY, bbox.y);
                 maxX = Math.max(maxX, bbox.x + bbox.width);
                 maxY = Math.max(maxY, bbox.y + bbox.height);
             });
-
             if (minX === Infinity) return;
-
             const boxWidth = maxX - minX;
             const boxHeight = maxY - minY;
-
-            const newViewBox = [
-                minX - padding,
-                minY - padding,
-                boxWidth + padding * 2,
-                boxHeight + padding * 2
-            ].join(' ');
-
+            const newViewBox = [ minX - padding, minY - padding, boxWidth + padding * 2, boxHeight + padding * 2 ].join(' ');
             svgElement.setAttribute('viewBox', newViewBox);
         }
-
 
         function drawPieChart() {
             if (chartPlaceholder) chartPlaceholder.classList.add('hidden');
@@ -384,7 +371,6 @@
             svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             svgElement.setAttribute("width", "100%"); 
             svgElement.setAttribute("height", "100%");
-            // 初期ViewBoxは固定。後でupdateViewBoxで更新
             svgElement.setAttribute("viewBox", `0 0 ${svgWidth} ${svgHeight}`); 
             chartContainer.appendChild(svgElement); 
 
@@ -420,7 +406,6 @@
                     const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
                     image.setAttributeNS("http://www.w3.org/1999/xlink", "href", entry.imageSrc);
                     
-                    // 画像の中心をパイの重心に合わせる
                     const centroidRadius = (2 / 3) * radius;
                     const imageCenterX = centerX + centroidRadius * Math.cos(midAngle);
                     const imageCenterY = centerY + centroidRadius * Math.sin(midAngle);
@@ -429,7 +414,7 @@
                     image.setAttribute("x", imageCenterX - scaledImgSize / 2 + entry.imageSettings.offsetX);
                     image.setAttribute("y", imageCenterY - scaledImgSize / 2 + entry.imageSettings.offsetY);
                     image.setAttribute("width", scaledImgSize); image.setAttribute("height", scaledImgSize);
-                    image.setAttribute("preserveAspectRatio", "xMidYMid slice"); 
+                    image.setAttribute("preserveAspectRatio", "xMidYMid meet"); 
                     pattern.appendChild(image); defs.appendChild(pattern);
                 }
 
@@ -499,7 +484,6 @@
                 svgElement.appendChild(group.line);
             });
 
-            // 全要素追加後にViewBoxを更新
             updateViewBox();
         }
 
@@ -543,7 +527,7 @@
                 entry.leaderLine.labelY = newY;
                 
                 updateLeaderLineOnLabelDrag(entry);
-                updateViewBox(); // ドラッグ中もViewBoxを更新
+                updateViewBox();
             }
         }
         
@@ -583,7 +567,6 @@
             const svgData = new XMLSerializer().serializeToString(svgElement);
             const canvas = document.createElement("canvas");
             
-            // viewBoxからサイズを取得して高解像度化
             const viewBox = svgElement.getAttribute('viewBox').split(' ').map(parseFloat);
             const svgWidthInViewBox = viewBox[2];
             const svgHeightInViewBox = viewBox[3];
@@ -596,15 +579,16 @@
             
             const img = new Image();
             img.onload = () => {
-                ctx.fillStyle = 'white'; 
-                ctx.fillRect(0, 0, canvas.width, canvas.height); 
+                // 背景を塗りつぶさないことで透過させる
+                // ctx.fillStyle = 'white'; 
+                // ctx.fillRect(0, 0, canvas.width, canvas.height); 
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
                 
                 const pngUrl = canvas.toDataURL("image/png");
                 const link = document.createElement("a");
-                link.download = "interactive-pie-chart.png"; link.href = pngUrl;
+                link.download = "interactive-pie-chart-transparent.png"; link.href = pngUrl;
                 document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                showMessage("PNG画像をダウンロードしました。", "success");
+                showMessage("透過PNG画像をダウンロードしました。", "success");
             };
             img.onerror = (e) => { console.error("SVGから画像への変換エラー:", e); showMessage("PNG画像の生成に失敗しました。", "error"); };
             img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
