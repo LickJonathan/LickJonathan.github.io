@@ -1,0 +1,64 @@
+/* 基本的なフォント設定 */
+body { 
+    font-family: 'Inter', sans-serif, 'Noto Sans JP', sans-serif; 
+}
+
+/* ドラッグ可能な要素のカーソル設定 */
+.draggable { 
+    cursor: grab; 
+}
+.dragging { 
+    cursor: grabbing; 
+}
+
+/* データ入力テーブルのインプット幅を調整 */
+#data-table input[type="text"], 
+#data-table input[type="number"] {
+    min-width: 100px;
+}
+
+/* SVG要素内のラベルテキストが選択されるのを防ぐ */
+.leader-line-label {
+    user-select: none; 
+}
+
+/* Firefoxでドラッグ中にゴースト画像が表示されるのを防ぐ */
+.draggable img { 
+    pointer-events: none; 
+}
+
+/* カスタムメッセージボックスのスタイル */
+.custom-message-box {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #333;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    z-index: 1000;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+}
+/* メッセージボックス表示時のスタイル */
+.custom-message-box.show {
+    display: block;
+    opacity: 1;
+}
+
+/* 正方形のアスペクト比を維持するコンテナ */
+.aspect-square-container {
+    width: 100%;
+    padding-bottom: 100%; 
+    position: relative;
+}
+/* コンテナ内のSVGをレスポンシブにする */
+.aspect-square-container > svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
